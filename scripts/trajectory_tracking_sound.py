@@ -17,7 +17,7 @@ class Trajectory_tracking():
 		
 
 	def __init__(self):
-		self.inbag_filename = "2021-05-23-19-47-32.bag"
+		self.inbag_filename = "2021-11-05-16-41-20.bag"
 		self.next_pose = []
 		self.path = Path()
 		self.goal_pose = Point()
@@ -115,8 +115,8 @@ class Trajectory_tracking():
 		while not rospy.is_shutdown():
 			for x in self.next_pose:
 				self.goal_pose = x
-				print(x)
-				while self.check_distance() > 2:
+				distance = 1.5
+				while self.check_distance() > distance:
 					#print(self.goal_pose)
 					self.play_sound()
 					self.rate.sleep()

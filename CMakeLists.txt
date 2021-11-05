@@ -10,6 +10,8 @@ project(simulation_sound_play)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
+  sensor_msgs
+  tf
 )
 
 ## System dependencies are found with CMake's conventions
@@ -104,8 +106,8 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES simulation_sound_play
-  CATKIN_DEPENDS roscpp rospy sound_play teleop_twist_keyboard 
-#  DEPENDS system_lib
+  CATKIN_DEPENDS roscpp rospy sound_play teleop_twist_keyboard sensor_msgs std_msgs nav_msgs tf
+# DEPENDS system_lib
 )
 
 ###########
@@ -132,7 +134,11 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-# add_executable(${PROJECT_NAME}_node src/simulation_sound_play_node.cpp)
+add_executable(generate_path_node src/generate_path.cpp)
+
+target_link_libraries(generate_path_node
+  ${catkin_LIBRARIES}
+)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -165,9 +171,9 @@ include_directories(
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html
-# install(TARGETS ${PROJECT_NAME}_node
-#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+#install(TARGETS ${PROJECT_NAME}_node
+#  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+#)
 
 ## Mark libraries for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_libraries.html

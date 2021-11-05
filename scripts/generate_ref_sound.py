@@ -55,14 +55,14 @@ class Move():
 		
 		if(self.bool_x == True):
 			if(self.diff_x > 0):
+				self.sound.arg = 'going forwad'
+			else:
+				self.sound.arg = 'going backward'
+		elif(self.bool_y == True):
+			if(self.diff_y > 0):
 				self.sound.arg = 'going right'
 			else:
 				self.sound.arg = 'going left'
-		elif(self.bool_y == True):
-			if(self.diff_y > 0):
-				self.sound.arg = 'going forward'
-			else:
-				self.sound.arg = 'going backwards'
 		elif(self.bool_z == True):
 			if(self.diff_z > 0):
 				self.sound.arg = 'going up'
@@ -75,14 +75,14 @@ class Move():
 
 		if(self.bool_x == True):
 			if(self.vel_x > 0):
-				self.sound.arg = 'going right'
-			else:
-				self.sound.arg = 'going left'
-		elif(self.bool_y == True):
-			if(self.vel_y > 0):
 				self.sound.arg = 'going forward'
 			else:
-				self.sound.arg = 'going backwards'
+				self.sound.arg = 'going backward'
+		elif(self.bool_y == True):
+			if(self.vel_y > 0):
+				self.sound.arg = 'going left'
+			else:
+				self.sound.arg = 'going right'
 		elif(self.bool_z == True):
 			if(self.vel_z > 0):
 				self.sound.arg = 'going up'
