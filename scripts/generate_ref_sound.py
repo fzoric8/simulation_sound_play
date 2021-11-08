@@ -3,242 +3,148 @@
 import time
 import sys
 import rospy
+import rosbag
 import numpy as np
-from geometry_msgs.msg import Pose
-from geometry_msgs.msg import Point
-from geometry_msgs.msg import Twist
+from math import sqrt, pow
+from geometry_msgs.msg import Pose, Point, Twist
 from sound_play.msg import SoundRequest
 from sound_play.libsoundplay import SoundClient
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, Path
 
-
-
-class Move():
-	def pose_callback(self, data):
-		self.pose = data
-		
-	def twist_callback(self, data):
-		self.vel = data
+class GenerateSound():
 
 	def __init__(self):
-		self.pose = Pose()
-		rospy.Subscriber('/uav/pose_ref', Pose, self.pose_callback)
-		rospy.Subscriber('/uav/odometry', Odometry, self.twist_callback)
-		self.vel = Odometry()
-		self.control_mode = -1
-		self.pub = rospy.Publisher('/uav/pose_ref', Pose, queue_size = 1)
-		self.pub_sound = rospy.Publisher('/robotsound', SoundRequest, queue_size = 1)
+
+		# 2 possible control modes --> a) reactive and b) interactive
+		self.playback_mode = "reactive" #"interactive"
+
 		self.rate = rospy.Rate(1)
-		self.point = Pose()
-		self.sound = SoundRequest()
-		self.point.position.z = 1
-		self.pose_now = Pose()
-		self.pose_prev = Pose()
-		self.count = 0
 
+		# Subscribers
+		self.cmd_sub = rospy.Subscriber('/uav/pose_ref', Pose, self.cmd_cb, queue_size=1)
+		self.odom_sub = rospy.Subscriber('/uav/odometry', Odometry, self.odom_cb, queue_size=1)
+		self.cmd_reciv = False
+		self.odom_reciv = False
+
+		# Publishers
+		self.sound_pub = rospy.Publisher('/robotsound', SoundRequest, queue_size = 1)
+		self.pose_ref_pub = rospy.Publisher('/uav/pose_ref', Pose, queue_size=1)
+
+		# Read rosbag
+		if self.playback_mode == "interactive": 
+			self.inbag_filename = "/home/developer/catkin_ws/src/simulation_sound_play/scripts/2021-05-09-09-49-56.bag"
+			self.poses = []
+			self.read_rosbag()
+
+	def cmd_cb(self, data):
+		self.cmd_reciv = True
+		self.cmd_pose = Pose()
+		self.cmd_pose = data
 		
+	def odom_cb(self, data):
+		self.odom_reciv = True
+		self.current_pose = Pose()
+		self.current_pose.position = data.pose.pose.position
+		self.current_pose.orientation = data.pose.pose.orientation
 
+	def read_rosbag(self):
+		for (topic, msg, t) in rosbag.Bag(self.inbag_filename, 'r').read_messages():
+			if(topic == '/path'):
+				for p_ in msg.poses:
+					self.poses.append(p_)
 
-	def play_sound(self):
-		self.sound.sound = -3
-		self.sound.command = 2
-		self.sound.volume = 1.0 
-		self.sound.arg2 = 'voice_kal_diphone'
+	def check_distance(self, pose1, pose2):
+		self.distance = sqrt(pow(pose1.position.x - pose2.position.x, 2) + pow(pose1.position.y - pose2.position.y, 2) + pow(pose1.position.z - pose2.position.z, 2))
+		return self.distance	
 
+	def play_sound(self, sound_cmd):
 		
-		self.diff_x, self.vel_x = 0, 0
-		self.diff_y, self.vel_y = 0, 0 
-		self.diff_z, self.vel_z = 0, 0
+		soundMsg = SoundRequest()
+		soundMsg.sound = -3
+		soundMsg.volume = 1.0 
+		soundMsg.arg2 = 'voice_kal_diphone'
+		
+		if (sound_cmd != ""):
+			# int8 PLAY_ONCE=1; int8 PLAY_START=2
+			soundMsg.command = 1
+			soundMsg.arg = str(sound_cmd)
+			self.sound_pub.publish(soundMsg)
 
-		self.check_dir()
-		
-		
-		if(self.bool_x == True):
-			if(self.diff_x > 0):
-				self.sound.arg = 'going forwad'
-			else:
-				self.sound.arg = 'going backward'
-		elif(self.bool_y == True):
-			if(self.diff_y > 0):
-				self.sound.arg = 'going right'
-			else:
-				self.sound.arg = 'going left'
-		elif(self.bool_z == True):
-			if(self.diff_z > 0):
-				self.sound.arg = 'going up'
-			else:
-				self.sound.arg = 'going down'
 		else:
-			self.sound.arg = 'beep'
+			# int8 PLAY_STOP=0
+			soundMsg.command = 0
+			soundMsg.arg = str(sound_cmd)
 
-		
+	def compare_difference(self):
 
-		if(self.bool_x == True):
-			if(self.vel_x > 0):
-				self.sound.arg = 'going forward'
+		diff_x = self.current_pose.position.x - self.cmd_pose.position.x
+		diff_y = self.current_pose.position.y - self.cmd_pose.position.y 
+		diff_z = self.current_pose.position.z - self.cmd_pose.position.z
+
+		rospy.logdebug("diff_x: {}\t diff_y: {}\t diff_z: {}\t".format(diff_x, diff_y, diff_z))
+
+		index = np.argmax([abs(diff_x), abs(diff_y), abs(diff_z)])
+
+		# To be percieved as pose change
+		min_val = 0.02
+
+		if index == 0 and (abs(diff_x) > min_val): 
+			if diff_x > 0: 
+				sound = "go backward"
 			else:
-				self.sound.arg = 'going backward'
-		elif(self.bool_y == True):
-			if(self.vel_y > 0):
-				self.sound.arg = 'going left'
+				sound = "go forward"
+		elif index == 1 and (abs(diff_y) > min_val):
+			if diff_y > 0: 
+				sound = "go left"
 			else:
-				self.sound.arg = 'going right'
-		elif(self.bool_z == True):
-			if(self.vel_z > 0):
-				self.sound.arg = 'going up'
+				sound = "go right"
+		elif index == 2 and (abs(diff_z) > min_val):
+			if diff_z > 0:
+				sound = "go down"
 			else:
-				self.sound.arg = 'going down'
+				sound = "go up"
 		else:
-			self.sound.arg = 'beep'
-		
-		
+			sound = ""
 
-		
-				
-			
+		rospy.logdebug("Sound to reproduce is: {}".format(sound))
 
-		self.pub_sound.publish(self.sound)
-		
-
-	def generate_reference(self, dir_x, dir_y, dir_z):
-		if(dir_x == 1):
-			if self.pose.position.x == 0:
-				while self.pose.position.x < 10:
-					self.pose_prev.position.x = self.point.position.x
-					self.point.position.x = self.pose.position.x + 0.5
-					self.pose_now.position.x = self.point.position.x
-					self.play_sound()
-					self.pub.publish(self.point)
-					self.rate.sleep()
-			if self.pose.position.x == 10:
-				while self.pose.position.x > 0:
-					self.pose_prev.position.x = self.point.position.x
-					self.point.position.x = self.pose.position.x - 0.5
-					self.pose_now.position.x = self.point.position.x
-					self.play_sound()
-					self.pub.publish(self.point)
-					self.rate.sleep()
-		elif(dir_y == 1):
-			if self.pose.position.y == 0:
-				while self.pose.position.y < 10:
-					self.pose_prev.position.y = self.point.position.y
-					self.point.position.y = self.pose.position.y + 0.5
-					self.pose_now.position.y = self.point.position.y
-					self.play_sound()
-					self.pub.publish(self.point)
-					self.rate.sleep()
-			if self.pose.position.y == 10:
-				while self.pose.position.y > 0:
-					self.pose_prev.position.y = self.point.position.y
-					self.point.position.y = self.pose.position.y - 0.5
-					self.pose_now.position.y = self.point.position.y 
-					self.play_sound()
-					self.pub.publish(self.point)
-					self.rate.sleep()
-		elif(dir_z == 1):
-			if self.pose.position.z == 0:
-				while self.pose.position.z < 10:
-					self.pose_prev.position.z = self.point.position.z
-					self.point.position.z = self.pose.position.z + 0.25
-					self.pose_now.position.z = self.point.position.z
-					self.play_sound()
-					self.pub.publish(self.point)
-					self.rate.sleep()
-			if self.pose.position.z == 10:
-				while self.pose.position.z > 0:
-					self.pose_prev.position.z = self.point.position.z
-					self.point.position.z = self.pose.position.z - 0.25 
-					self.pose_now.position.z = self.point.position.z
-					self.play_sound()
-					self.pub.publish(self.point)
-					self.rate.sleep()
-
-
-
-	def check_dir(self):
-		if(self.control_mode == 1):
-			self.diff_x = self.pose_now.position.x - self.pose_prev.position.x 
-			self.diff_y = self.pose_now.position.y - self.pose_prev.position.y 
-			self.diff_z = self.pose_now.position.z - self.pose_prev.position.z 
-			
-			self.abs_x = abs(self.diff_x)
-			self.abs_y = abs(self.diff_y)
-			self.abs_z = abs(self.diff_z)
-			
-		
-			if (self.abs_x > self.abs_y and self.abs_x > self.abs_z):
-				self.bool_x = True
-				self.bool_y = False
-				self.bool_z = False
-			elif (self.abs_y > self.diff_x and self.abs_y > self.abs_z):
-				self.bool_x = False
-				self.bool_y = True
-				self.bool_z = False
-			elif (self.abs_z > self.abs_y and self.abs_z > self.abs_x):
-				self.bool_x = False
-				self.bool_y = False
-				self.bool_z = True
-
-		elif(self.control_mode == -1):
-			if self.pose.position.x % 0.125 == 0 or self.pose.position.y % 0.125 == 0 or self.pose.position.z % 0.125 == 0:
-				
-				if self.count % 4 == 0:
-
-					self.vel_x = self.vel.twist.twist.linear.x
-					self.vel_y = self.vel.twist.twist.linear.y
-					self.vel_z = self.vel.twist.twist.linear.z
-		
-					self.vel_abs_x = abs(self.vel_x)
-					self.vel_abs_y = abs(self.vel_y)
-					self.vel_abs_z = abs(self.vel_z) - 0.2
-
-					print("x:" + str(self.vel_x))
-					print("y:" + str(self.vel_y))
-					print("z:" + str(self.vel_z))
-
-					if (self.vel_abs_x > self.vel_abs_y and self.vel_abs_x > self.vel_abs_z):
-						self.bool_x = True
-						self.bool_y = False
-						self.bool_z = False
-					elif (self.vel_abs_y > self.vel_abs_x and self.vel_abs_y > self.vel_abs_z):
-						self.bool_x = False
-						self.bool_y = True
-						self.bool_z = False
-					elif (self.vel_abs_z > self.vel_abs_y and self.vel_abs_z > self.vel_abs_x):
-						self.bool_x = False
-						self.bool_y = False
-						self.bool_z = True
-					else:
-						self.bool_x = False
-						self.bool_y = False
-						self.bool_z = False
-				self.count = self.count + 1
-				
-					
-		
+		return sound
 
 	def run(self):
 		while not rospy.is_shutdown():
-			if(self.control_mode == 1):
-				self.generate_reference(0, 0, 1)
+			rospy.loginfo("Running sound playback!")
 			
-			elif(self.control_mode == -1):
-				self.generate_reference(1 ,0, 0)
-				
-					
-						
-						
-			
-				
-		
+			if(self.playback_mode == "reactive"):
+				if (self.odom_reciv and self.cmd_reciv):
+					sound_cmd = self.compare_difference()
+					self.play_sound(sound_cmd)
+					self.rate.sleep()
+				else:
+					rospy.loginfo("Didn't recieved cmd or odom msg!")
+
+			if (self.playback_mode == "interactive"):
+				if self.odom_reciv:
+					for x in self.poses:
+						pose_cmd = Pose()
+						pose_cmd.position = x.pose.position
+						pose_cmd.orientation = x.pose.orientation
+						self.pose_ref_pub.publish(pose_cmd)
+
+						while self.check_distance(self.current_pose, x.pose) > 0.05:							
+							#sound_cmd = self.compare_difference()
+							#self.play_sound(sound_cmd)
+
+							rospy.loginfo("Waiting UAV to reach cmd state!")
+
+				# use bag for now
+
 
 				
-				
 if __name__ == '__main__':
-	rospy.init_node('generate_ref_sound', anonymous = True)
+	rospy.init_node('generate_ref_sound', anonymous = True, log_level=rospy.DEBUG)
 	time.sleep(5)
 	try:
-		mv = Move()
-		mv.run()
+		gS = GenerateSound()
+		gS.run()
 	except rospy.ROSInterruptException:pass
 	
