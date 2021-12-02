@@ -41,8 +41,7 @@ Constrict on 1 obstacle and different safety levels of UAV.
 
 # TODO: 
  - [ ] Add trajectory drawings 
- - [ ] Check why UAV climbs at all times
- - [ ] Check different distances maybe 
+ - [x] Check why UAV climbs at all times
+ - [x] Check different distances maybe 
  - [ ] Check how to use EAST/NORTH/WEST/SOUTH convention 
- - [ ] Define critical height below which UAV says 'GO UP TO PREVENT FALL' 
  
